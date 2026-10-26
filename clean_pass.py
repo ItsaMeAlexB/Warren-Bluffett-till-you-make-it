@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import openpyxl
 
 import config as C
+import cache
 import cascade
 import eulerpool_fund
 import market
@@ -126,9 +127,24 @@ def company_description(info, euler, company=None):
     return None
 
 
-def pull_stockdata(ticker, now):
-    """One StockData pull for a ticker -> (http_status, articles list)."""
-    after = (now - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+def cache_window(ticker, now):
+    """Rolling-cache fetch window (days) for a ticker from articles.csv
+    (cache.py): no rows -> 7, last_fetch==today -> 1, else today-last+1."""
+    rows = []
+    if os.path.exists(ARTICLES):
+        try:
+            rows = list(csv.DictReader(open(ARTICLES)))
+        except Exception:
+            rows = []
+    last = cache.per_ticker_last(rows).get(ticker)
+    has = any(r.get("ticker") == ticker for r in rows)
+    return cache.fetch_window(has, last, now.date().isoformat())
+
+
+def pull_stockdata(ticker, now, days=7):
+    """One StockData pull for a ticker -> (http_status, articles list).
+    `days` is the rolling-cache fetch window (published_after = now - days)."""
+    after = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     params = (f"?symbols={ticker}&filter_entities=true&language=en"
               f"&published_after={after}&limit=100")
     status, ecode, arts = news._stockdata_all(params, ticker=ticker)
@@ -207,27 +223,28 @@ def vader_fallback(ticker, now):
 
 
 def append_articles(sd_rows, vader_rows):
-    """Merge scored-article rows into articles.csv, dedup by headline_hash."""
-    fieldnames = ["ticker", "published_at", "source", "sentiment_score",
-                  "match_score", "headline_hash"]
-    seen, new = set(), []
+    """Merge scored-article rows into articles.csv via the rolling cache
+    (cache.py): dedup by headline_hash, prepend new rows, prune to 144h, save."""
+    rows = []
     if os.path.exists(ARTICLES):
         try:
             for r in csv.DictReader(open(ARTICLES)):
-                seen.add(r["headline_hash"])
+                rows.append({k: r.get(k, "") for k in cache.FIELDS})
         except Exception:
-            pass
-    for r in sd_rows + vader_rows:                # vader rows carry no match
-        if r["headline_hash"] not in seen:
-            new.append(r)
-            seen.add(r["headline_hash"])
-    if new:
-        with open(ARTICLES, "a", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames)
-            if os.path.getsize(ARTICLES) == 0:
-                w.writeheader()
-            w.writerows(new)
-    return len(new)
+            rows = []
+    today = datetime.date.today().isoformat()
+    new = []
+    for r in sd_rows + vader_rows:
+        new.append({
+            "ticker": r.get("ticker", ""),
+            "headline": r.get("headline", ""),
+            "sentiment": r.get("sentiment", r.get("sentiment_score", "")),
+            "source": r.get("source", "stockdata"),
+            "published_at": r.get("published_at", ""),
+            "fetch_date": today,
+            "headline_hash": r.get("headline_hash", ""),
+        })
+    return cache.merge_and_save(ARTICLES, rows, new, today)
 
 
 def compute_sd(ws, hdr_row):
@@ -237,9 +254,11 @@ def compute_sd(ws, hdr_row):
     vals = []
     if os.path.exists(ARTICLES):
         for r in csv.DictReader(open(ARTICLES)):
-            if r["source"] == "stockdata":
+            if r.get("source") == "stockdata":
+                v = r.get("sentiment") if r.get("sentiment") not in (None, "") \
+                    else r.get("sentiment_score")
                 try:
-                    vals.append(float(r["sentiment_score"]))
+                    vals.append(float(v))
                 except (TypeError, ValueError):
                     pass
     n = len(vals)
@@ -420,7 +439,7 @@ def main():
         # ---- stockdata news via cascade (VADER fallback below) ----
         def _sd_fetch(t):
             nonlocal sd_fail_reason
-            status, arts = pull_stockdata(t, now)
+            status, arts = pull_stockdata(t, now, cache_window(t, now))
             if status == 200 and arts:
                 return (status, arts)
             sd_fail_reason = ("quota" if status in (401, 402, 403, 429)
