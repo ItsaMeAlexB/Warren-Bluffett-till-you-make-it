@@ -13,15 +13,15 @@ if ! "$PY" -c "import yfinance, openpyxl, vaderSentiment" >/dev/null 2>&1; then
   if "$PY" -m venv .venv >/dev/null 2>&1; then
     ./.venv/bin/pip install --upgrade pip >/dev/null
     ./.venv/bin/pip install -r requirements.txt
-    RUN="./.venv/bin/python main.py"
+    RUN="./.venv/bin/python clean_pass.py --write"
   else
     "$PY" -m pip install --user --break-system-packages -r requirements.txt \
       || "$PY" -m pip install --user -r requirements.txt
-    RUN="$PY main.py"
+    RUN="$PY clean_pass.py --write"
   fi
 else
   echo "==> Dependencies already present."
-  [ -x .venv/bin/python ] && RUN=".venv/bin/python main.py" || RUN="$PY main.py"
+  [ -x .venv/bin/python ] && RUN=".venv/bin/python clean_pass.py --write" || RUN="$PY clean_pass.py --write"
 fi
 
 echo "==> Done. Run a scan with:   $RUN"

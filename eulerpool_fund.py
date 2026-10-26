@@ -46,6 +46,8 @@ def _get(path, identifier):
         return None
     except RuntimeError:
         return None
+    except requests.RequestException:
+        return None              # network error, not quota
     _all_failed = False
     time.sleep(FETCH_DELAY)          # 1 s spacing, same as yfinance/news
     return r.json()

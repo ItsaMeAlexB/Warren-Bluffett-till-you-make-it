@@ -42,12 +42,14 @@ import scores
 import sentiment as sen
 from calculations import compute_zscore
 
-# 1-based openpyxl column of each field in the new layout (header row 15).
-# The three per-source ticker columns were collapsed into ONE 'Ticker' column
-# (here at column 1, where the collapsed set begins).
-J = {"ticker": 1, "company": 4, "country": 5, "industry": 6,
-     "desc": 7, "news": 8, "sent": 9, "z": 10, "pos": 11, "fund": 12,
-     "bm": 13, "action": 23, "notes": 24}
+# 1-based openpyxl column of each field in the collapsed single-Ticker layout
+# (header row 15): the three per-source ticker columns were collapsed into ONE
+# 'Ticker' column at column 1, so every subsequent column shifted left by 2.
+J = {"ticker": 1, "company": 2, "country": 3, "industry": 4,
+     "desc": 5, "news": 6, "sent": 7, "z": 8, "pos": 9, "fund": 10,
+     "bm": 11, "shares": 12, "avg_cost": 13, "target": 14, "price": 15,
+     "value_held": 16, "profit": 17, "currency": 18,
+     "prev_shares": 19, "prev_price": 20, "action": 21, "notes": 22}
 
 ARTICLES = os.path.join(C.HERE, "articles.csv")
 H = 3600.0
@@ -147,7 +149,10 @@ def pull_stockdata(ticker, now, days=7):
     after = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     params = (f"?symbols={ticker}&filter_entities=true&language=en"
               f"&published_after={after}&limit=100")
-    status, ecode, arts = news._stockdata_all(params, ticker=ticker)
+    try:
+        status, ecode, arts = news._stockdata_all(params, ticker=ticker)
+    except Exception:
+        return None, []            # network error -> caller falls back
     if status != 200:
         return status, []
     return status, arts
@@ -303,7 +308,11 @@ def bulk_fetch_stockdata(tickers, now, batch=15, max_pages=3):
             info["calls"] += 1
             params = (f"?symbols={syms}&filter_entities=true&language=en"
                       f"&published_after={after}&limit=50&page={page}")
-            status, ecode, arts = news._stockdata_all(params, ticker=syms)
+            try:
+                status, ecode, arts = news._stockdata_all(params, ticker=syms)
+            except Exception:
+                info["exhausted"] = True      # network error -> stop
+                break
             if status != 200:
                 if status in (401, 402, 403, 429) or ecode == "all_keys_failed":
                     info["exhausted"] = True
@@ -492,6 +501,7 @@ def main():
                                 "ticker": main_w,
                                 "published_at": a.get("published_at"),
                                 "source": "stockdata",
+                                "headline": a.get("title") or "",
                                 "sentiment_score": float(e["sentiment_score"]),
                                 "match_score": float(e.get("match_score") or 0.0),
                                 "headline_hash": _headline_hash(a.get("title"))})
@@ -510,6 +520,7 @@ def main():
                     vader_bucket.append({
                         "ticker": main_w, "published_at": _pt, "source": "vader",
                         "sentiment_score": sen.score(_t), "match_score": "",
+                        "headline": _t,
                         "headline_hash": _headline_hash(_t)})
         if rr is None:
             rr, pr, delta = 0.0, 0.0, 0.0

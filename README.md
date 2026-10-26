@@ -9,7 +9,7 @@ concern, missing fundamentals, high withholding tax, etc.). No Google Sheets,
 no SimFin, no Telegram, no background service.
 
 ```bash
-python3 main.py            # run a scan now
+python3 clean_pass.py --write            # run a scan now
 ```
 
 ---
@@ -123,7 +123,7 @@ auto-converted.
 
 ```bash
 ./install.sh            # installs Python deps (venv or --user)
-python3 main.py         # run a scan
+python3 clean_pass.py --write         # run a scan
 ```
 
 ## Restricted trades
@@ -147,7 +147,7 @@ Environment variables (all optional):
 | `EULERPOOL_KEYS` | `.env` | eulerpool keys, comma-separated, failover on quota |
 | `STOCKDATA_API_KEY` / `_2`, `EULERPOOL_API_KEY` | `.env` | legacy single-key aliases |
 
-To run automatically, point your own `cron`/`systemd` timer at `main.py` — the
+To run automatically, point your own `cron`/`systemd` timer at `clean_pass.py` — the
 scan itself is on-demand.
 
 ## Setup
@@ -157,7 +157,7 @@ Copy `.env.example` to `.env` and fill in `STOCKDATA_API_KEY` and
 project folder; it too is gitignored and not pushed to GitHub.
 
 ## Files
-- `main.py` — on-demand orchestrator (fetch -> score -> allocate -> write)
+- `clean_pass.py` — on-demand orchestrator (fetch -> score -> allocate -> write)
 - `config.py` — defaults, thresholds, spreadsheet columns, source keys
 - `sheet.py` — read/write `Portfolio.xlsx`
 - `scores.py` — PRE/POST financial health + adaptive B/M blend + eulerpool KPI
@@ -178,7 +178,7 @@ project folder; it too is gitignored and not pushed to GitHub.
 > StockData has zero articles for a ticker at T−20, `build_calibration_set.py`
 > falls back to Finnhub `/company-news` scored with VADER into the same rolling
 > 24h windows and tags `sentiment_source=finnhub`. **Finnhub is NEVER wired into
-> `main.py` / the live scan** — training data only. Shortage of historical
+> `clean_pass.py` / the live scan** — training data only. Shortage of historical
 > sentiment is tagged `sentiment_unavailable_historical`, never fabricated.
 
 ## Data sources & ticker formats
